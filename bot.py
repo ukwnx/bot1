@@ -2,7 +2,7 @@ import os
 import random
 import sqlite3
 import aiohttp
-import psycopg2  # Connects securely to your external free Supabase cloud database
+import pg8000  # 👈 STABLE INTERFACE ENGINE FIXED FOR PYTHON 3.14
 from datetime import datetime, date
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -19,7 +19,28 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def get_db_connection():
     if not DATABASE_URL:
         return sqlite3.connect(os.path.join(current_dir, "database.db"))
-    return psycopg2.connect(DATABASE_URL)
+    
+    # Parse Supabase link parameters into specific connection blocks manually for pg8000
+    try:
+        # Example format: postgresql://postgres:pass@db.co:5432/postgres
+        clean_url = DATABASE_URL.replace("postgresql://", "")
+        user_pass, host_db = clean_url.split("@")
+        username, password = user_pass.split(":")
+        host_port, dbname = host_db.split("/")
+        host, port = host_port.split(":")
+        if "?" in dbname:
+            dbname = dbname.split("?")[0]
+            
+        return pg8000.connect(
+            user=username,
+            password=password,
+            host=host,
+            port=int(port),
+            database=dbname
+        )
+    except Exception as parse_error:
+        print(f"URL Parsing Engine Log: {parse_error}")
+        return sqlite3.connect(os.path.join(current_dir, "database.db"))
 
 def init_db():
     conn = get_db_connection()
@@ -159,7 +180,7 @@ def register():
             conn.commit()
             conn.close()
             return redirect(url_for('login'))
-        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
+        except Exception:
             conn.close()
             return render_template("register.html", error="Username already exists.")
     return render_template("register.html")
@@ -249,3 +270,4 @@ async def api_generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+

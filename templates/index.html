@@ -41,7 +41,7 @@
                 <p style="margin:5px 0 0 0; color:#64748b;">Logged in as: <b>{{ username }}</b></p>
             </div>
             <div class="nav-links">
-                <span class="badge {% if role=='Premium' %}premium-bg{% elif role=='VIP' %}vip-bg{% endif %}">{{ role }}</span>
+                <span class="badge {% if role == 'Premium' %}premium-bg{% elif role == 'VIP' %}vip-bg{% endif %}">{{ role }}</span>
                 {% if role == 'Admin' %}<a href="/admin" style="color:#a855f7;">[Admin Panel]</a>{% endif %}
                 <a href="/logout">Logout</a>
             </div>
@@ -186,3 +186,4 @@
     </script>
 </body>
 </html>
+

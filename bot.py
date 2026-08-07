@@ -13,15 +13,12 @@ template_dir = os.path.join(current_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "altvault_super_secret_key_1337")
 
-# --- MANDATORY DATABASE CONNECTION ENGINE ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    # If the cloud link is missing, crash immediately with an obvious log message instead of wiping data silently
     if not DATABASE_URL:
         raise ValueError("CRITICAL: DATABASE_URL environment variable is completely missing on Render!")
     
-    # Strip transaction pool parameters to match pg8000 connection layout requirements
     clean_url = DATABASE_URL.replace("postgresql://", "")
     if "?" in clean_url:
         clean_url = clean_url.split("?")[0]
@@ -43,7 +40,6 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Generate structural data tables inside your permanent Supabase cloud engine
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY, 
@@ -62,7 +58,6 @@ def init_db():
         )
     """)
     
-    # Seed your master admin profile safely into the cloud server tables
     cursor.execute("SELECT * FROM users WHERE username = %s", ('admin',))
     if not cursor.fetchone():
         hashed_pw = generate_password_hash("admin123")
@@ -76,7 +71,6 @@ try:
 except Exception as db_error:
     print(f"DATABASE INITIALIZATION LOG FAILURE: {db_error}")
 
-# --- TIER CODES CONFIGURATION ---
 TIER_CONFIG = {
     "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink/2IoF/key-system"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5},
@@ -106,7 +100,6 @@ def increment_daily_claims(user_id, tier):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Executes true cloud native row optimization counters
     cursor.execute("""
         INSERT INTO claims (user_id, tier, claim_date, claim_count) 
         VALUES (%s, %s, %s, 1)
@@ -142,16 +135,15 @@ def login():
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
-        cursor.execute(f"SELECT id, username, password, role FROM users WHERE username = {p}", (username,))
+        cursor.execute("SELECT id, username, password, role FROM users WHERE username = %s", (username,))
         user = cursor.fetchone()
         conn.close()
         
-        # FIX: Extracts the clean password string explicitly from database response object array
+        # FIX: Extracts items clearly by index index number position tracking from the returned database tuple
         if user and check_password_hash(user[2], password):
-            session['user_id'] = str(user[0])
-            session['username'] = str(user[1])
-            session['role'] = str(user[3])
+            session['user_id'] = str(user[0])   # Clean numerical ID string
+            session['username'] = str(user[1]) # Clean text username string
+            session['role'] = str(user[3])     # Clean designated role string
             return redirect(url_for('index'))
         return render_template("login.html", error="Invalid username or password.")
     return render_template("login.html")
@@ -168,9 +160,8 @@ def register():
         hashed_pw = generate_password_hash(password)
         conn = get_db_connection()
         cursor = conn.cursor()
-        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
         try:
-            cursor.execute(f"INSERT INTO users (username, password) VALUES ({p}, {p})", (username, hashed_pw))
+            cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
             conn.commit()
             conn.close()
             return redirect(url_for('login'))
@@ -191,13 +182,12 @@ def admin_dashboard():
         
     conn = get_db_connection()
     cursor = conn.cursor()
-    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     
     if request.method == 'POST':
         if 'update_role' in request.form:
             target_uid = request.form['user_id']
             new_role = request.form['role']
-            cursor.execute(f"UPDATE users SET role = {p} WHERE id = {p}", (new_role, target_uid))
+            cursor.execute("UPDATE users SET role = %s WHERE id = %s", (new_role, target_uid))
             conn.commit()
         elif 'restock' in request.form:
             tier = request.form['tier']
@@ -266,4 +256,3 @@ def api_generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
-

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AltVault - Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #0b0e14; color: #e2e8f0; padding: 40px; margin: 0; text-align: center; }
+        .wrapper { max-width: 800px; margin: 0 auto; background: #111622; padding: 30px; border-radius: 12px; box-shadow: 0 8px 24px rgba(0,0,0,0.6); }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #1e293b; padding-bottom: 15px; margin-bottom: 30px; }
+        h1 { color: #a855f7; margin: 0; font-size: 28px; }
+        .badge { background: #3b82f6; padding: 4px 12px; border-radius: 20px; font-size: 14px; font-weight: bold; }
+        .premium-bg { background: #eab308; color: #000; }
+        .vip-bg { background: #ec4899; }
+        .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 30px; }
+        .card { background: #1e2536; padding: 20px; border-radius: 8px; border-top: 4px solid #a855f7; text-align: left; }
+        .card.premium { border-top-color: #eab308; }
+        .card.vip { border-top-color: #ec4899; }
+        .btn { display: block; width: 100%; box-sizing: border-box; background: #a855f7; color: white; padding: 12px; text-decoration: none; border-radius: 6px; font-weight: bold; margin-top: 15px; text-align: center; border: none; cursor: pointer; font-size: 15px; }
+        .btn:hover { opacity: 0.9; }
+        .btn-workink { background: #2563eb; margin-bottom: 10px; }
+        input[type="text"] { width: 100%; box-sizing: border-box; padding: 10px; margin-top: 10px; border-radius: 6px; border: 1px solid #334155; background: #0f172a; color: #fff; text-align: center; }
+        #display-box { background: #000; color: #22c55e; font-family: monospace; font-size: 18px; padding: 20px; border-radius: 6px; border: 1px dashed #22c55e; margin-top: 25px; display: none; word-break: break-all; }
+        .nav-links a { color: #94a3b8; text-decoration: none; margin-left: 15px; font-weight: bold; }
+        .nav-links a:hover { color: #fff; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <div class="header">
+            <div>
+                <h1>⚡ ALTVAULT HUB</h1>
+                <p style="margin:5px 0 0 0; color:#64748b;">Logged in as: <b>{{ username }}</b></p>
+            </div>
+            <div class="nav-links">
+                <span class="badge {% if role=='Premium' %}premium-bg{% elif role=='VIP' %}vip-bg{% endif %}">{{ role }}</span>
+                {% if role == 'Admin' %}<a href="/admin" style="color:#a855f7;">[Admin Panel]</a>{% endif %}
+                <a href="/logout">Logout</a>
+            </div>
+        </div>
+
+        <div class="grid">
+            <!-- Free Card -->
+            <div class="card">
+                <h3>🟢 Free Tier</h3>
+                <p>Stock: <b>{{ stock.free }}</b> left</p>
+                <p>Limit: 2 per day</p>
+                <a href="{{ free_link }}" target="_blank" class="btn btn-workink">1. Get Work.ink Key</a>
+                <input type="text" id="free-key" placeholder="Paste verification key here">
+                <button class="btn" onclick="gen('free')">2. Generate Account</button>
+            </div>
+            <!-- Premium Card -->
+            <div class="card premium">
+                <h3>🟡 Premium Tier</h3>
+                <p>Stock: <b>{{ stock.premium }}</b> left</p>
+                <p>Limit: 5 per day</p>
+                <button class="btn" style="background:#eab308; color:#000;" onclick="gen('premium')">Instant Generate</button>
+            </div>
+            <!-- VIP Card -->
+            <div class="card vip">
+                <h3>💗 VIP Tier</h3>
+                <p>Stock: <b>{{ stock.vip }}</b> left</p>
+                <p>Limit: 10 per day</p>
+                <button class="btn" style="background:#ec4899;" onclick="gen('vip')">Instant Generate</button>
+            </div>
+        </div>
+
+        <div id="display-box"></div>
+    </div>
+
+    <script>
+        async function gen(tierName) {
+            const dbBox = document.getElementById("display-box");
+            let keyVal = "";
+            
+            if(tierName === 'free') {
+                keyVal = document.getElementById("free-key").value.strip;
+                if(!keyVal) { alert("Please complete the Work.ink bypass and enter your key first!"); return; }
+            }
+
+            dbBox.style.display = "block";
+            dbBox.style.color = "#eab308";
+            dbBox.innerText = "Querying internal stock vault channels...";
+
+            const response = await fetch('/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tier: tierName, key: keyVal })
+            });
+            const data = await response.json();
+
+            if(data.success) {
+                dbBox.style.color = "#22c55e";
+                dbBox.innerHTML = "<b style='color:#fff;'>🔓 GENERATION SUCCESSFUL:</b><br><br>" + data.account;
+            } else {
+                dbBox.style.color = "#ef4444";
+                dbBox.innerHTML = "<b>❌ ERROR:</b> " + data.message;
+            }
+        }
+    </script>
+</body>
+</html>

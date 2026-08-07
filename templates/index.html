@@ -39,7 +39,6 @@
         </div>
 
         <div class="grid">
-            <!-- Free Card -->
             <div class="card">
                 <h3>🟢 Free Tier</h3>
                 <p>Stock: <b>{{ stock.free }}</b> left</p>
@@ -48,14 +47,12 @@
                 <input type="text" id="free-key" placeholder="Paste verification key here">
                 <button class="btn" onclick="gen('free')">2. Generate Account</button>
             </div>
-            <!-- Premium Card -->
             <div class="card premium">
                 <h3>🟡 Premium Tier</h3>
                 <p>Stock: <b>{{ stock.premium }}</b> left</p>
                 <p>Limit: 5 per day</p>
                 <button class="btn" style="background:#eab308; color:#000;" onclick="gen('premium')">Instant Generate</button>
             </div>
-            <!-- VIP Card -->
             <div class="card vip">
                 <h3>💗 VIP Tier</h3>
                 <p>Stock: <b>{{ stock.vip }}</b> left</p>
@@ -73,7 +70,7 @@
             let keyVal = "";
             
             if(tierName === 'free') {
-                keyVal = document.getElementById("free-key").value.strip;
+                keyVal = document.getElementById("free-key").value.trim(); // 👈 FIXED: Uses JavaScript .trim() now
                 if(!keyVal) { alert("Please complete the Work.ink bypass and enter your key first!"); return; }
             }
 

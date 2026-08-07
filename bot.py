@@ -56,7 +56,7 @@ except Exception:
     pass
 
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink"},
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink/2IoF/key-system"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5},
     "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10}
 }
@@ -94,7 +94,7 @@ def increment_daily_claims(user_id, tier):
     conn.close()
 
 def verify_workink_key(key):
-    base_address = "https://work" + ".ink/api/public/v1/keys/verify"
+    base_address = "https://work.ink/api/public/v1/keys/verify"
     url = f"{base_address}?key={key}"
     try:
         response = requests.get(url, timeout=5)

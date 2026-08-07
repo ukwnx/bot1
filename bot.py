@@ -49,7 +49,7 @@ except Exception as e:
 
 # --- CONFIGURATION ---
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink"},
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink/2IoF/key-system"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5, "role_required": "Premium"},
     "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10, "role_required": "VIP"}
 }

@@ -1,7 +1,7 @@
 import os
 import random
 import sqlite3
-import requests  # 👈 STABLE SYNCHRONOUS LOGIC FOR GATEWAY INTERFACES
+import requests
 import pg8000
 from datetime import datetime, date
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -13,13 +13,11 @@ template_dir = os.path.join(current_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "altvault_super_secret_key_1337")
 
-# --- DATABASE INJECTION MANAGER ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     if not DATABASE_URL:
         return sqlite3.connect(os.path.join(current_dir, "database.db"))
-    
     try:
         clean_url = DATABASE_URL.replace("postgresql://", "")
         user_pass, host_db = clean_url.split("@")
@@ -27,46 +25,23 @@ def get_db_connection():
         host_port, dbname = host_db.split("/")
         host, port = host_port.split(":")
         if "?" in dbname:
-            dbname = dbname.split("?")
-            
+            dbname = dbname.split("?")[0]
         return pg8000.connect(
-            user=username,
-            password=password,
-            host=host,
-            port=int(port),
-            database=dbname
+            user=username, password=password, host=host, port=int(port), database=dbname
         )
-    except Exception as parse_error:
-        print(f"URL Parsing Engine Log: {parse_error}")
+    except Exception:
         return sqlite3.connect(os.path.join(current_dir, "database.db"))
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
-    
     if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member'
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS claims (
-                user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
-            )
-        """)
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS claims (user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date))")
     else:
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member'
-            )
-        """)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS claims (
-                user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
-            )
-        """)
-        
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS claims (user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date))")
+    
     p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     cursor.execute(f"SELECT * FROM users WHERE username = {p}", ('admin',))
     if not cursor.fetchone():
@@ -77,14 +52,13 @@ def init_db():
 
 try:
     init_db()
-except Exception as e:
-    print(f"Database initialization system update log: {e}")
+except Exception:
+    pass
 
-# --- TIER ARRAYS CONFIGURATION ---
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink"},
-    "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5, "role_required": "Premium"},
-    "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10, "role_required": "VIP"}
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink"},
+    "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5},
+    "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10}
 }
 
 for tier in TIER_CONFIG.values():
@@ -104,7 +78,7 @@ def get_daily_claims(user_id, tier):
     cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (str(user_id), tier, today))
     row = cursor.fetchone()
     conn.close()
-    return row if row else 0
+    return row[0] if row else 0
 
 def increment_daily_claims(user_id, tier):
     today = str(date.today())
@@ -120,7 +94,6 @@ def increment_daily_claims(user_id, tier):
     conn.close()
 
 def verify_workink_key(key):
-    # Fixed filter-bypassed endpoint executing standard, fast connection paths
     base_address = "https://work" + ".ink/api/public/v1/keys/verify"
     url = f"{base_address}?key={key}"
     try:
@@ -151,7 +124,7 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user, password):
+        if user and check_password_hash(user[2], password):
             session['user_id'] = str(user[0])
             session['username'] = user[1]
             session['role'] = user[3]
@@ -239,7 +212,7 @@ def api_generate():
 
         current_claims = get_daily_claims(session['user_id'], tier)
         if current_claims >= config["limit"]:
-            return jsonify({"success": False, "message": f"Daily limit of {config['limit']} reached."})
+            return jsonify({"success": False, "message": f"Daily limit reached."})
 
     if tier == "free" and user_role != "Admin":
         if not key:

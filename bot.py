@@ -13,7 +13,6 @@ template_dir = os.path.join(current_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "altvault_super_secret_key_1337")
 
-# --- FIXED DATABASE URL PARSING ENGINE ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
@@ -25,7 +24,6 @@ def get_db_connection():
         if "?" in clean_url:
             clean_url = clean_url.split("?")[0]
             
-        # FIX: Dynamically isolates the very last '@' symbol to properly support passwords containing an '@' sign
         r_index = clean_url.rfind("@")
         user_pass = clean_url[:r_index]
         host_db = clean_url[r_index+1:]
@@ -102,7 +100,7 @@ def get_daily_claims(user_id, tier):
     cursor.execute("SELECT claim_count FROM claims WHERE user_id = %s AND tier = %s AND claim_date = %s", (str(user_id), tier, today))
     row = cursor.fetchone()
     conn.close()
-    return row if row else 0
+    return row[0] if row else 0
 
 def increment_daily_claims(user_id, tier):
     today = str(date.today())
@@ -148,11 +146,11 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        # FIX: Extracts items clearly by index index number position tracking from the returned database tuple
+        # FIX: Directly target index offsets, [1], [2], [3] from the database row tuple
         if user and check_password_hash(user[2], password):
-            session['user_id'] = str(user[0])   # Clean numerical ID string
-            session['username'] = str(user[1]) # Clean text username string
-            session['role'] = str(user[3])     # Clean designated role string
+            session['user_id'] = str(user[0])
+            session['username'] = str(user[1])
+            session['role'] = str(user[3])
             return redirect(url_for('index'))
         return render_template("login.html", error="Invalid username or password.")
     return render_template("login.html")

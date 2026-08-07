@@ -22,7 +22,7 @@ def get_db_connection():
     try:
         clean_url = DATABASE_URL.replace("postgresql://", "")
         if "?" in clean_url:
-            clean_url = clean_url.split("?")[0]
+            clean_url = clean_url.split("?")
             
         r_index = clean_url.rfind("@")
         user_pass = clean_url[:r_index]
@@ -146,7 +146,7 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        # Isolate explicit data types from tuple indexes: id=[0], username=[1], password=[2], role=[3]
+        # FIXED: Targets explicit array position indexes (0=id, 1=username, 2=password, 3=role) 
         if user and check_password_hash(user[2], password):
             session['user_id'] = str(user[0])
             session['username'] = str(user[1])

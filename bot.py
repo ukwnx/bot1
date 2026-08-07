@@ -2,7 +2,7 @@ import os
 import random
 import sqlite3
 import aiohttp
-import pg8000  # 👈 STABLE INTERFACE ENGINE FIXED FOR PYTHON 3.14
+import pg8000
 from datetime import datetime, date
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -20,9 +20,7 @@ def get_db_connection():
     if not DATABASE_URL:
         return sqlite3.connect(os.path.join(current_dir, "database.db"))
     
-    # Parse Supabase link parameters into specific connection blocks manually for pg8000
     try:
-        # Example format: postgresql://postgres:pass@db.co:5432/postgres
         clean_url = DATABASE_URL.replace("postgresql://", "")
         user_pass, host_db = clean_url.split("@")
         username, password = user_pass.split(":")
@@ -46,7 +44,7 @@ def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    if not DATABASE_URL:
+    if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member'
@@ -69,7 +67,7 @@ def init_db():
             )
         """)
         
-    p = "?" if not DATABASE_URL else "%s"
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     cursor.execute(f"SELECT * FROM users WHERE username = {p}", ('admin',))
     if not cursor.fetchone():
         hashed_pw = generate_password_hash("admin123")
@@ -102,8 +100,8 @@ def get_daily_claims(user_id, tier):
     today = str(date.today())
     conn = get_db_connection()
     cursor = conn.cursor()
-    param_char = "?" if not DATABASE_URL else "%s"
-    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {param_char} AND tier = {param_char} AND claim_date = {param_char}", (user_id, tier, today))
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
+    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (user_id, tier, today))
     row = cursor.fetchone()
     conn.close()
     return row if row else 0
@@ -113,7 +111,7 @@ def increment_daily_claims(user_id, tier):
     current = get_daily_claims(user_id, tier)
     conn = get_db_connection()
     cursor = conn.cursor()
-    p = "?" if not DATABASE_URL else "%s"
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     if current == 0:
         cursor.execute(f"INSERT INTO claims VALUES ({p}, {p}, {p}, 1)", (user_id, tier, today))
     else:
@@ -149,12 +147,12 @@ def login():
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        p = "?" if not DATABASE_URL else "%s"
+        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
         cursor.execute(f"SELECT id, username, password, role FROM users WHERE username = {p}", (username,))
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user[2], password):
+        if user and check_password_hash(user[2], password): # Fixed index scanning parameter mapping
             session['user_id'] = user[0]
             session['username'] = user[1]
             session['role'] = user[3]
@@ -174,7 +172,7 @@ def register():
         hashed_pw = generate_password_hash(password)
         conn = get_db_connection()
         cursor = conn.cursor()
-        p = "?" if not DATABASE_URL else "%s"
+        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
         try:
             cursor.execute(f"INSERT INTO users (username, password) VALUES ({p}, {p})", (username, hashed_pw))
             conn.commit()
@@ -197,7 +195,7 @@ def admin_dashboard():
         
     conn = get_db_connection()
     cursor = conn.cursor()
-    p = "?" if not DATABASE_URL else "%s"
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     
     if request.method == 'POST':
         if 'update_role' in request.form:
@@ -270,4 +268,3 @@ async def api_generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
-

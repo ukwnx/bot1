@@ -56,7 +56,7 @@ except Exception:
     pass
 
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink/2IoF/key-system"},
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5},
     "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10}
 }
@@ -85,24 +85,32 @@ def increment_daily_claims(user_id, tier):
     current = get_daily_claims(user_id, tier)
     conn = get_db_connection()
     cursor = conn.cursor()
-    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
-    if current == 0:
-        cursor.execute(f"INSERT INTO claims VALUES ({p}, {p}, {p}, 1)", (str(user_id), tier, today))
+    
+    # FIX: Uses cloud-optimized Upsert routing commands to safely manage claim updates
+    if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
+        if current == 0:
+            cursor.execute("INSERT INTO claims VALUES (?, ?, ?, 1)", (str(user_id), tier, today))
+        else:
+            cursor.execute("UPDATE claims SET claim_count = ? WHERE user_id = ? AND tier = ? AND claim_date = ?", (current + 1, str(user_id), tier, today))
     else:
-        cursor.execute(f"UPDATE claims SET claim_count = {p} WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (current + 1, str(user_id), tier, today))
+        # Postgres ON CONFLICT command forces row adjustments smoothly
+        cursor.execute("""
+            INSERT INTO claims (user_id, tier, claim_date, claim_count) 
+            VALUES (%s, %s, %s, 1)
+            ON CONFLICT (user_id, tier, claim_date) 
+            DO UPDATE SET claim_count = claims.claim_count + 1
+        """, (str(user_id), tier, today))
+        
     conn.commit()
     conn.close()
 
 def verify_workink_key(key):
-    # Split text strings securely circumvent platform automated code filters
-    base_endpoint = "https://work.ink/_api/v2/token/isValid/"
-    # Appends token text value along with the explicit instruction to burn it post-check
-    url = f"{base_endpoint}{key}?deleteToken=1"
+    base_address = "https://work.ink"
+    url = f"{base_address}?key={key}"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
-            data = response.json()
-            return data.get("valid", False)
+            return response.json().get("valid", False)
     except Exception:
         return False
     return False
@@ -127,10 +135,10 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user[2], password):
-            session['user_id'] = str(user[0])   # Clean numerical ID string string parsed
-            session['username'] = str(user[1]) # Clean isolated plain text username string
-            session['role'] = str(user[3])     # Clean designated access role string mapped
+        if user and check_password_hash(user, password):
+            session['user_id'] = str(user)
+            session['username'] = user
+            session['role'] = user
             return redirect(url_for('index'))
         return render_template("login.html", error="Invalid username or password.")
     return render_template("login.html")
@@ -215,7 +223,7 @@ def api_generate():
 
         current_claims = get_daily_claims(session['user_id'], tier)
         if current_claims >= config["limit"]:
-            return jsonify({"success": False, "message": f"Daily limit reached. Max {config['limit']} daily."})
+            return jsonify({"success": False, "message": f"Daily limit reached."})
 
     if tier == "free" and user_role != "Admin":
         if not key:

@@ -13,28 +13,37 @@ template_dir = os.path.join(current_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "altvault_super_secret_key_1337")
 
+# --- FIXED DATABASE URL PARSING ENGINE ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     if not DATABASE_URL:
         raise ValueError("CRITICAL: DATABASE_URL environment variable is completely missing on Render!")
     
-    clean_url = DATABASE_URL.replace("postgresql://", "")
-    if "?" in clean_url:
-        clean_url = clean_url.split("?")[0]
+    try:
+        clean_url = DATABASE_URL.replace("postgresql://", "")
+        if "?" in clean_url:
+            clean_url = clean_url.split("?")[0]
+            
+        # FIX: Dynamically isolates the very last '@' symbol to properly support passwords containing an '@' sign
+        r_index = clean_url.rfind("@")
+        user_pass = clean_url[:r_index]
+        host_db = clean_url[r_index+1:]
         
-    user_pass, host_db = clean_url.split("@")
-    username, password = user_pass.split(":")
-    host_port, dbname = host_db.split("/")
-    host, port = host_port.split(":")
-    
-    return pg8000.connect(
-        user=username,
-        password=password,
-        host=host,
-        port=int(port),
-        database=dbname
-    )
+        username, password = user_pass.split(":", 1)
+        host_port, dbname = host_db.split("/")
+        host, port = host_port.split(":")
+        
+        return pg8000.connect(
+            user=username,
+            password=password,
+            host=host,
+            port=int(port),
+            database=dbname
+        )
+    except Exception as parse_error:
+        print(f"DATABASE CONNECTION ENGINE EXCEPTION CRASH: {parse_error}")
+        raise parse_error
 
 def init_db():
     conn = get_db_connection()
@@ -93,7 +102,7 @@ def get_daily_claims(user_id, tier):
     cursor.execute("SELECT claim_count FROM claims WHERE user_id = %s AND tier = %s AND claim_date = %s", (str(user_id), tier, today))
     row = cursor.fetchone()
     conn.close()
-    return row[0] if row else 0
+    return row if row else 0
 
 def increment_daily_claims(user_id, tier):
     today = str(date.today())

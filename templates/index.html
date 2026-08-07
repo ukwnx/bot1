@@ -30,8 +30,6 @@
     </style>
 </head>
 <body>
-    <div id="user-role-meta" data-role="{{ role }}" style="display: none;"></div>
-
     <div class="wrapper">
         <div class="header">
             <div>
@@ -72,9 +70,9 @@
                     <p style="margin: 5px 0;">Stock: <b>{{ stock.premium }}</b> left</p>
                     <p style="margin: 5px 0; font-size:13px; color:#64748b;">Limit: 5 per day</p>
                     <ul class="tier-features">
-                        <li>Aged 2015 and below accounts</li>
+                        <li>Accounts from 2017 to 2026</li>
+                        <li>Minimum 60+ days aged accounts</li>
                         <li>Completely ad-wall free</li>
-                        <li>Upgraded daily generation caps</li>
                     </ul>
                 </div>
                 <div>
@@ -103,7 +101,7 @@
         <div id="display-box"></div>
     </div>
 
-    <!-- INVISIBLE YOUTUBE BACKGROUND AUDIO PLAYER -->
+    <!-- BACKGROUND PLAYER -->
     <div id="yt-audio-container" style="display: none;">
         <iframe id="yt-player" allow="autoplay"></iframe>
     </div>
@@ -115,42 +113,35 @@
 
         async function gen(tierName) {
             const dbBox = document.getElementById("display-box");
-            const currentRole = document.getElementById("user-role-meta").getAttribute("data-role");
             let keyVal = "";
             
-            if (currentRole !== "Admin") {
-                if (tierName === "premium" && currentRole !== "Premium" && currentRole !== "VIP") {
-                    alert("Please open a ticket in our Discord server to unlock this tier!");
-                    return;
-                }
-                if (tierName === "vip" && currentRole !== "VIP") {
-                    alert("Please open a ticket in our Discord server to unlock this tier!");
-                    return;
-                }
-            }
-            
-            if(tierName === 'free') {
+            if (tierName === 'free') {
                 keyVal = document.getElementById("free-key").value.trim();
-                if(!keyVal) { alert("Please complete the Work.ink bypass and enter your key first!"); return; }
+                if (!keyVal) { alert("Please enter your Work.ink key!"); return; }
             }
 
             dbBox.style.display = "block";
             dbBox.style.color = "#eab308";
-            dbBox.innerText = "Querying internal stock vault channels...";
+            dbBox.innerText = "Processing extraction requests...";
 
-            const response = await fetch('/api/generate', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ tier: tierName, key: keyVal })
-            });
-            const data = await response.json();
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tier: tierName, key: keyVal })
+                });
+                const data = await response.json();
 
-            if(data.success) {
-                dbBox.style.color = "#22c55e";
-                dbBox.innerHTML = "<b style='color:#fff;'>🔓 GENERATION SUCCESSFUL:</b><br><br>" + data.account;
-            } else {
+                if (data.success) {
+                    dbBox.style.color = "#22c55e";
+                    dbBox.innerHTML = "<b style='color:#fff;'>🔓 GENERATION SUCCESSFUL:</b><br><br>" + data.account;
+                } else {
+                    dbBox.style.color = "#ef4444";
+                    dbBox.innerHTML = "<b>❌ ERROR:</b> " + data.message;
+                }
+            } catch (err) {
                 dbBox.style.color = "#ef4444";
-                dbBox.innerHTML = "<b>❌ ERROR:</b> " + data.message;
+                dbBox.innerHTML = "<b>❌ NETWORK CRASH:</b> Failed to contact server backend infrastructure.";
             }
         }
 
@@ -162,9 +153,7 @@
         var player;
         function onYouTubeIframeAPIReady() {
             player = new YT.Player('yt-player', {
-                events: {
-                    'onReady': onPlayerReady
-                }
+                events: { 'onReady': onPlayerReady }
             });
         }
 

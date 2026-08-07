@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AltVault - Admin Console</title>
+    <style>
+        body { font-family: 'Segoe UI', Arial, sans-serif; background-color: #0b0e14; color: #e2e8f0; padding: 40px; margin: 0; }
+        .wrapper { max-width: 900px; margin: 0 auto; background: #111622; padding: 30px; border-radius: 12px; }
+        h1 { color: #a855f7; margin-top: 0; border-bottom: 2px solid #1e293b; padding-bottom: 10px; }
+        .section { background: #1e2536; padding: 20px; border-radius: 8px; margin-bottom: 25px; }
+        h3 { margin-top: 0; color: #3b82f6; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #334155; }
+        th { background: #0f172a; color: #94a3b8; }
+        select, input[type="file"], button { padding: 8px 12px; border-radius: 4px; border: 1px solid #475569; background: #0f172a; color: #fff; cursor: pointer; }
+        button { background: #a855f7; border: none; font-weight: bold; }
+        button:hover { opacity: 0.9; }
+        .back-link { display: inline-block; color: #94a3b8; text-decoration: none; margin-bottom: 20px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="wrapper">
+        <a href="/" class="back-link">← Return to Main Dashboard</a>
+        <h1>🛠️ ADMIN CONFIGURATION CONSOLE</h1>
+
+        <!-- Restock Utility -->
+        <div class="section">
+            <h3>📦 Bulk Restock Accounts System</h3>
+            <p>Upload a plain <code>.txt</code> file containing credentials formatted as <code>username:password</code> (one combo entry per line).</p>
+            <form method="POST" enctype="multipart/form-data" style="display: flex; gap: 15px; align-items: center;">
+                <input type="hidden" name="restock" value="1">
+                <select name="tier" required>
+                    <option value="free">Free Tier Pool</option>
+                    <option value="premium">Premium Tier Pool</option>
+                    <option value="vip">VIP Tier Pool</option>
+                </select>
+                <input type="file" name="file" accept=".txt" required>
+                <button type="submit">Upload Database</button>
+            </form>
+        </div>
+
+        <!-- Manage User Roles -->
+        <div class="section">
+            <h3>👥 Manage Registered Members & Permissions</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Username</th>
+                        <th>Current Role Permission</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user[0] }}</td>
+                        <td><b>{{ user[1] }}</b></td>
+                        <td>{{ user[2] }}</td>
+                        <td>
+                            <form method="POST" style="display:inline;">
+                                <input type="hidden" name="update_role" value="1">
+                                <input type="hidden" name="user_id" value="{{ user[0] }}">
+                                <select name="role">
+                                    <option value="Member" {% if user[2]=='Member' %}selected{% endif %}>Member</option>
+                                    <option value="Premium" {% if user[2]=='Premium' %}selected{% endif %}>Premium</option>
+                                    <option value="VIP" {% if user[2]=='VIP' %}selected{% endif %}>VIP</option>
+                                    <option value="Admin" {% if user[2]=='Admin' %}selected{% endif %}>Admin</option>
+                                </select>
+                                <button type="submit" style="background:#2563eb; padding: 6px 10px; font-size:13px;">Save</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

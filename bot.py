@@ -56,7 +56,7 @@ except Exception:
     pass
 
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink"},
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink/2IoF/key-system"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5},
     "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10}
 }
@@ -86,14 +86,12 @@ def increment_daily_claims(user_id, tier):
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # FIX: Uses cloud-optimized Upsert routing commands to safely manage claim updates
     if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
         if current == 0:
             cursor.execute("INSERT INTO claims VALUES (?, ?, ?, 1)", (str(user_id), tier, today))
         else:
             cursor.execute("UPDATE claims SET claim_count = ? WHERE user_id = ? AND tier = ? AND claim_date = ?", (current + 1, str(user_id), tier, today))
     else:
-        # Postgres ON CONFLICT command forces row adjustments smoothly
         cursor.execute("""
             INSERT INTO claims (user_id, tier, claim_date, claim_count) 
             VALUES (%s, %s, %s, 1)
@@ -105,8 +103,8 @@ def increment_daily_claims(user_id, tier):
     conn.close()
 
 def verify_workink_key(key):
-    base_address = "https://work.ink"
-    url = f"{base_address}?key={key}"
+    # Includes the mandatory API sub-route path structure
+    url = f"https://work.ink/_api/v2/token/isValid/{key}?deleteToken=1"
     try:
         response = requests.get(url, timeout=5)
         if response.status_code == 200:
@@ -135,10 +133,11 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user, password):
-            session['user_id'] = str(user)
-            session['username'] = user
-            session['role'] = user
+        # FIX: Extracts the clean password string explicitly from database response object array
+        if user and check_password_hash(user[2], password):
+            session['user_id'] = str(user[0])
+            session['username'] = str(user[1])
+            session['role'] = str(user[3])
             return redirect(url_for('index'))
         return render_template("login.html", error="Invalid username or password.")
     return render_template("login.html")
@@ -253,3 +252,4 @@ def api_generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+

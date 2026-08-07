@@ -152,7 +152,7 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user[2], password): # Fixed index scanning parameter mapping
+        if user and check_password_hash(user[2], password):
             session['user_id'] = user[0]
             session['username'] = user[1]
             session['role'] = user[3]
@@ -238,11 +238,12 @@ async def api_generate():
         elif tier == "vip" and user_role != "VIP":
             return jsonify({"success": False, "message": "Requires VIP Role Locked Status."})
 
-    current_claims = get_daily_claims(session['user_id'], tier)
-    if current_claims >= config["limit"] and user_role != "Admin":
-        return jsonify({"success": False, "message": f"Daily limit of {config['limit']} elements met."})
+        # Check limits only for regular members (Admins bypass)
+        current_claims = get_daily_claims(session['user_id'], tier)
+        if current_claims >= config["limit"]:
+            return jsonify({"success": False, "message": f"Daily limit of {config['limit']} elements met."})
 
-    if tier == "free":
+    if tier == "free" and user_role != "Admin":
         if not key:
             return jsonify({"success": False, "message": "Free validation parameter requires a verification key string token."})
         is_valid = await verify_workink_key(key)
@@ -262,9 +263,12 @@ async def api_generate():
     with open(file_path, "w", encoding="utf-8") as f:
         for line in lines: f.write(line + "\n")
         
-    increment_daily_claims(session['user_id'], tier)
+    if user_role != "Admin":
+        increment_daily_claims(session['user_id'], tier)
+        
     return jsonify({"success": True, "account": selected_account})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
+

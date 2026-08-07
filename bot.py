@@ -146,7 +146,7 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        # FIX: Directly target index offsets, [1], [2], [3] from the database row tuple
+        # Isolate explicit data types from tuple indexes: id=[0], username=[1], password=[2], role=[3]
         if user and check_password_hash(user[2], password):
             session['user_id'] = str(user[0])
             session['username'] = str(user[1])

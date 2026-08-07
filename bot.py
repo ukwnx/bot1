@@ -27,7 +27,7 @@ def get_db_connection():
         host_port, dbname = host_db.split("/")
         host, port = host_port.split(":")
         if "?" in dbname:
-            dbname = dbname.split("?")[0]
+            dbname = dbname.split("?")
             
         return pg8000.connect(
             user=username,
@@ -52,7 +52,7 @@ def init_db():
         """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS claims (
-                user_id INTEGER, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
+                user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
             )
         """)
     else:
@@ -63,7 +63,7 @@ def init_db():
         """)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS claims (
-                user_id INTEGER, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
+                user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
             )
         """)
         
@@ -101,7 +101,7 @@ def get_daily_claims(user_id, tier):
     conn = get_db_connection()
     cursor = conn.cursor()
     p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
-    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (user_id, tier, today))
+    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (str(user_id), tier, today))
     row = cursor.fetchone()
     conn.close()
     return row if row else 0
@@ -113,9 +113,9 @@ def increment_daily_claims(user_id, tier):
     cursor = conn.cursor()
     p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     if current == 0:
-        cursor.execute(f"INSERT INTO claims VALUES ({p}, {p}, {p}, 1)", (user_id, tier, today))
+        cursor.execute(f"INSERT INTO claims VALUES ({p}, {p}, {p}, 1)", (str(user_id), tier, today))
     else:
-        cursor.execute(f"UPDATE claims SET claim_count = {p} WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (current + 1, user_id, tier, today))
+        cursor.execute(f"UPDATE claims SET claim_count = {p} WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (current + 1, str(user_id), tier, today))
     conn.commit()
     conn.close()
 
@@ -153,7 +153,7 @@ def login():
         conn.close()
         
         if user and check_password_hash(user[2], password):
-            session['user_id'] = user[0]
+            session['user_id'] = str(user[0])  # Extracts clean string ID integer
             session['username'] = user[1]
             session['role'] = user[3]
             return redirect(url_for('index'))
@@ -234,25 +234,24 @@ async def api_generate():
     
     if user_role != "Admin":
         if tier == "premium" and user_role not in ["Premium", "VIP"]:
-            return jsonify({"success": False, "message": "Requires Premium Role Locked Status."})
+            return jsonify({"success": False, "message": "Requires Premium Role Status."})
         elif tier == "vip" and user_role != "VIP":
-            return jsonify({"success": False, "message": "Requires VIP Role Locked Status."})
+            return jsonify({"success": False, "message": "Requires VIP Role Status."})
 
-        # Check limits only for regular members (Admins bypass)
         current_claims = get_daily_claims(session['user_id'], tier)
         if current_claims >= config["limit"]:
-            return jsonify({"success": False, "message": f"Daily limit of {config['limit']} elements met."})
+            return jsonify({"success": False, "message": f"Daily limit of {config['limit']} reached."})
 
     if tier == "free" and user_role != "Admin":
         if not key:
-            return jsonify({"success": False, "message": "Free validation parameter requires a verification key string token."})
+            return jsonify({"success": False, "message": "Verification key required."})
         is_valid = await verify_workink_key(key)
         if not is_valid:
             return jsonify({"success": False, "message": "Invalid or expired Work.ink key."})
 
     file_path = config["file"]
     if count_lines(file_path) == 0:
-        return jsonify({"success": False, "message": "Stock channel is empty for this tier allocation layout!"})
+        return jsonify({"success": False, "message": "This tier is out of stock!"})
 
     with open(file_path, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -271,4 +270,3 @@ async def api_generate():
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port, debug=False)
-

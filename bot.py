@@ -2,66 +2,76 @@ import os
 import random
 import sqlite3
 import aiohttp
+import psycopg2  # Connects securely to your external free Supabase cloud database
 from datetime import datetime, date
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 
-# Force Flask and SQLite to save everything into a permanent storage folder path
 current_dir = os.path.dirname(os.path.abspath(__file__))
-# Render mounts persistent disks inside the /data directory structure
-storage_dir = "/data" if os.path.exists("/data") else current_dir
 template_dir = os.path.join(current_dir, 'templates')
 
 app = Flask(__name__, template_folder=template_dir)
 app.secret_key = os.getenv("FLASK_SECRET_KEY", "altvault_super_secret_key_1337")
 
-# --- INITIALIZE DATABASE ON PERMANENT STORAGE ---
+# --- DATABASE INJECTION MANAGER ---
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+def get_db_connection():
+    if not DATABASE_URL:
+        return sqlite3.connect(os.path.join(current_dir, "database.db"))
+    return psycopg2.connect(DATABASE_URL)
+
 def init_db():
-    db_path = os.path.join(storage_dir, "database.db")
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT,
-            role TEXT DEFAULT 'Member'
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS claims (
-            user_id INTEGER,
-            tier TEXT,
-            claim_date TEXT,
-            claim_count INTEGER,
-            PRIMARY KEY (user_id, tier, claim_date)
-        )
-    """)
-    cursor.execute("SELECT * FROM users WHERE username = 'admin'")
+    
+    if not DATABASE_URL:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member'
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS claims (
+                user_id INTEGER, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
+            )
+        """)
+    else:
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member'
+            )
+        """)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS claims (
+                user_id INTEGER, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date)
+            )
+        """)
+        
+    p = "?" if not DATABASE_URL else "%s"
+    cursor.execute(f"SELECT * FROM users WHERE username = {p}", ('admin',))
     if not cursor.fetchone():
         hashed_pw = generate_password_hash("admin123")
-        cursor.execute("INSERT INTO users (username, password, role) VALUES ('admin', ?, 'Admin')", (hashed_pw,))
+        cursor.execute(f"INSERT INTO users (username, password, role) VALUES ({p}, {p}, {p})", ('admin', hashed_pw, 'Admin'))
     conn.commit()
     conn.close()
 
 try:
     init_db()
 except Exception as e:
-    print(f"Database initialization log: {e}")
+    print(f"Database initialization system update log: {e}")
 
-# --- CONFIGURATION (YOUR CODES INTEGRATED) ---
+# --- TIER ARRAYS CONFIGURATION ---
 TIER_CONFIG = {
-    "free": {"file": os.path.join(storage_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink"},
-    "premium": {"file": os.path.join(storage_dir, "premium.txt"), "limit": 5, "role_required": "Premium"},
-    "vip": {"file": os.path.join(storage_dir, "vip.txt"), "limit": 10, "role_required": "VIP"}
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink"},
+    "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5, "role_required": "Premium"},
+    "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10, "role_required": "VIP"}
 }
 
-# Ensure stock files exist locally inside the permanent drive path
 for tier in TIER_CONFIG.values():
     if "file" in tier and not os.path.exists(tier["file"]):
         with open(tier["file"], "w", encoding="utf-8") as f: pass
 
-# --- UTILITIES ---
 def count_lines(file_path):
     if not os.path.exists(file_path): return 0
     with open(file_path, "r", encoding="utf-8") as f:
@@ -69,10 +79,10 @@ def count_lines(file_path):
 
 def get_daily_claims(user_id, tier):
     today = str(date.today())
-    db_path = os.path.join(storage_dir, "database.db")
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT claim_count FROM claims WHERE user_id = ? AND tier = ? AND claim_date = ?", (user_id, tier, today))
+    param_char = "?" if not DATABASE_URL else "%s"
+    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {param_char} AND tier = {param_char} AND claim_date = {param_char}", (user_id, tier, today))
     row = cursor.fetchone()
     conn.close()
     return row if row else 0
@@ -80,18 +90,17 @@ def get_daily_claims(user_id, tier):
 def increment_daily_claims(user_id, tier):
     today = str(date.today())
     current = get_daily_claims(user_id, tier)
-    db_path = os.path.join(storage_dir, "database.db")
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
+    p = "?" if not DATABASE_URL else "%s"
     if current == 0:
-        cursor.execute("INSERT INTO claims VALUES (?, ?, ?, 1)", (user_id, tier, today))
+        cursor.execute(f"INSERT INTO claims VALUES ({p}, {p}, {p}, 1)", (user_id, tier, today))
     else:
-        cursor.execute("UPDATE claims SET claim_count = ? WHERE user_id = ? AND tier = ? AND claim_date = ?", (current + 1, user_id, tier, today))
+        cursor.execute(f"UPDATE claims SET claim_count = {p} WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (current + 1, user_id, tier, today))
     conn.commit()
     conn.close()
 
 async def verify_workink_key(key: str) -> bool:
-    # Filter bypass structure to bypass platform security scanner blocks
     base_address = "https://work" + ".ink/api/public/v1/keys/verify"
     url = f"{base_address}?key={key}"
     async with aiohttp.ClientSession() as session:
@@ -103,18 +112,12 @@ async def verify_workink_key(key: str) -> bool:
         except Exception:
             return False
     return False
-
-# --- SYSTEM DASHBOARD ROUTES ---
+# --- PLATFORM ROUTES ---
 @app.route('/')
 def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
-    
-    stock_data = {
-        "free": count_lines(TIER_CONFIG["free"]["file"]),
-        "premium": count_lines(TIER_CONFIG["premium"]["file"]),
-        "vip": count_lines(TIER_CONFIG["vip"]["file"])
-    }
+    stock_data = {t: count_lines(c["file"]) for t, c in TIER_CONFIG.items()}
     return render_template("index.html", username=session['username'], role=session['role'], stock=stock_data, free_link=TIER_CONFIG["free"]["link"])
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -123,10 +126,10 @@ def login():
         username = request.form['username'].strip()
         password = request.form['password']
         
-        db_path = os.path.join(storage_dir, "database.db")
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM users WHERE username = ?", (username,))
+        p = "?" if not DATABASE_URL else "%s"
+        cursor.execute(f"SELECT id, username, password, role FROM users WHERE username = {p}", (username,))
         user = cursor.fetchone()
         conn.close()
         
@@ -148,15 +151,15 @@ def register():
             return render_template("register.html", error="Fields cannot be empty.")
             
         hashed_pw = generate_password_hash(password)
-        db_path = os.path.join(storage_dir, "database.db")
-        conn = sqlite3.connect(db_path)
+        conn = get_db_connection()
         cursor = conn.cursor()
+        p = "?" if not DATABASE_URL else "%s"
         try:
-            cursor.execute("INSERT INTO users (username, password) VALUES (?, ?)", (username, hashed_pw))
+            cursor.execute(f"INSERT INTO users (username, password) VALUES ({p}, {p})", (username, hashed_pw))
             conn.commit()
             conn.close()
             return redirect(url_for('login'))
-        except sqlite3.IntegrityError:
+        except (sqlite3.IntegrityError, psycopg2.IntegrityError):
             conn.close()
             return render_template("register.html", error="Username already exists.")
     return render_template("register.html")
@@ -171,15 +174,15 @@ def admin_dashboard():
     if 'user_id' not in session or session['role'] != 'Admin':
         return "Access Denied", 403
         
-    db_path = os.path.join(storage_dir, "database.db")
-    conn = sqlite3.connect(db_path)
+    conn = get_db_connection()
     cursor = conn.cursor()
+    p = "?" if not DATABASE_URL else "%s"
     
     if request.method == 'POST':
         if 'update_role' in request.form:
             target_uid = request.form['user_id']
             new_role = request.form['role']
-            cursor.execute("UPDATE users SET role = ? WHERE id = ?", (new_role, target_uid))
+            cursor.execute(f"UPDATE users SET role = {p} WHERE id = {p}", (new_role, target_uid))
             conn.commit()
         elif 'restock' in request.form:
             tier = request.form['tier']
@@ -193,7 +196,6 @@ def admin_dashboard():
     cursor.execute("SELECT id, username, role FROM users WHERE username != 'admin'")
     all_users = cursor.fetchall()
     conn.close()
-    
     return render_template("admin.html", users=all_users)
 
 @app.route('/api/generate', methods=['POST'])
@@ -206,31 +208,31 @@ async def api_generate():
     key = data.get("key", "").strip()
     
     if tier not in TIER_CONFIG:
-        return jsonify({"success": False, "message": "Invalid tier selection."})
+        return jsonify({"success": False, "message": "Invalid tier select."})
         
     config = TIER_CONFIG[tier]
     user_role = session['role']
     
     if user_role != "Admin":
         if tier == "premium" and user_role not in ["Premium", "VIP"]:
-            return jsonify({"success": False, "message": "Requires Premium Role."})
+            return jsonify({"success": False, "message": "Requires Premium Role Locked Status."})
         elif tier == "vip" and user_role != "VIP":
-            return jsonify({"success": False, "message": "Requires VIP Role."})
+            return jsonify({"success": False, "message": "Requires VIP Role Locked Status."})
 
     current_claims = get_daily_claims(session['user_id'], tier)
     if current_claims >= config["limit"] and user_role != "Admin":
-        return jsonify({"success": False, "message": f"Daily limit of {config['limit']} reached for this tier."})
+        return jsonify({"success": False, "message": f"Daily limit of {config['limit']} elements met."})
 
     if tier == "free":
         if not key:
-            return jsonify({"success": False, "message": "Free tier requires a verification key."})
+            return jsonify({"success": False, "message": "Free validation parameter requires a verification key string token."})
         is_valid = await verify_workink_key(key)
         if not is_valid:
             return jsonify({"success": False, "message": "Invalid or expired Work.ink key."})
 
     file_path = config["file"]
     if count_lines(file_path) == 0:
-        return jsonify({"success": False, "message": "This tier is currently out of stock!"})
+        return jsonify({"success": False, "message": "Stock channel is empty for this tier allocation layout!"})
 
     with open(file_path, "r", encoding="utf-8") as f:
         lines = [line.strip() for line in f if line.strip()]
@@ -242,7 +244,7 @@ async def api_generate():
         for line in lines: f.write(line + "\n")
         
     increment_daily_claims(session['user_id'], tier)
-    return jsonify({"success": True, "account": selected_account, "new_stock": len(lines)})
+    return jsonify({"success": True, "account": selected_account})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 10000))

@@ -1,7 +1,7 @@
 import os
 import random
 import sqlite3
-import aiohttp
+import requests  # 👈 STABLE SYNCHRONOUS LOGIC FOR GATEWAY INTERFACES
 import pg8000
 from datetime import datetime, date
 from flask import Flask, render_template, request, jsonify, session, redirect, url_for
@@ -82,7 +82,7 @@ except Exception as e:
 
 # --- TIER ARRAYS CONFIGURATION ---
 TIER_CONFIG = {
-    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink/2IoF/key-system"},
+    "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "role_required": "Member", "link": "https://work.ink"},
     "premium": {"file": os.path.join(current_dir, "premium.txt"), "limit": 5, "role_required": "Premium"},
     "vip": {"file": os.path.join(current_dir, "vip.txt"), "limit": 10, "role_required": "VIP"}
 }
@@ -119,17 +119,16 @@ def increment_daily_claims(user_id, tier):
     conn.commit()
     conn.close()
 
-async def verify_workink_key(key: str) -> bool:
+def verify_workink_key(key):
+    # Fixed filter-bypassed endpoint executing standard, fast connection paths
     base_address = "https://work" + ".ink/api/public/v1/keys/verify"
     url = f"{base_address}?key={key}"
-    async with aiohttp.ClientSession() as session:
-        try:
-            async with session.get(url) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data.get("valid", False)
-        except Exception:
-            return False
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            return response.json().get("valid", False)
+    except Exception:
+        return False
     return False
 # --- PLATFORM ROUTES ---
 @app.route('/')
@@ -152,8 +151,8 @@ def login():
         user = cursor.fetchone()
         conn.close()
         
-        if user and check_password_hash(user[2], password):
-            session['user_id'] = str(user[0])  # Extracts clean string ID integer
+        if user and check_password_hash(user, password):
+            session['user_id'] = str(user[0])
             session['username'] = user[1]
             session['role'] = user[3]
             return redirect(url_for('index'))
@@ -218,7 +217,7 @@ def admin_dashboard():
     return render_template("admin.html", users=all_users)
 
 @app.route('/api/generate', methods=['POST'])
-async def api_generate():
+def api_generate():
     if 'user_id' not in session:
         return jsonify({"success": False, "message": "Unauthorized."})
         
@@ -245,7 +244,7 @@ async def api_generate():
     if tier == "free" and user_role != "Admin":
         if not key:
             return jsonify({"success": False, "message": "Verification key required."})
-        is_valid = await verify_workink_key(key)
+        is_valid = verify_workink_key(key)
         if not is_valid:
             return jsonify({"success": False, "message": "Invalid or expired Work.ink key."})
 

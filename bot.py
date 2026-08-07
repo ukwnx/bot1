@@ -17,66 +17,43 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
     if not DATABASE_URL:
-        raise ValueError("CRITICAL: DATABASE_URL environment variable is completely missing on Render!")
-    
+        return sqlite3.connect(os.path.join(current_dir, "database.db"))
     try:
         clean_url = DATABASE_URL.replace("postgresql://", "")
-        if "?" in clean_url:
-            clean_url = clean_url.split("?")
-            
-        r_index = clean_url.rfind("@")
-        user_pass = clean_url[:r_index]
-        host_db = clean_url[r_index+1:]
-        
-        username, password = user_pass.split(":", 1)
+        user_pass, host_db = clean_url.split("@")
+        username, password = user_pass.split(":")
         host_port, dbname = host_db.split("/")
         host, port = host_port.split(":")
-        
+        if "?" in dbname:
+            dbname = dbname.split("?")
         return pg8000.connect(
-            user=username,
-            password=password,
-            host=host,
-            port=int(port),
-            database=dbname
+            user=username, password=password, host=host, port=int(port), database=dbname
         )
-    except Exception as parse_error:
-        print(f"DATABASE CONNECTION ENGINE EXCEPTION CRASH: {parse_error}")
-        raise parse_error
+    except Exception:
+        return sqlite3.connect(os.path.join(current_dir, "database.db"))
 
 def init_db():
     conn = get_db_connection()
     cursor = conn.cursor()
+    if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS claims (user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date))")
+    else:
+        cursor.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username TEXT UNIQUE, password TEXT, role TEXT DEFAULT 'Member')")
+        cursor.execute("CREATE TABLE IF NOT EXISTS claims (user_id TEXT, tier TEXT, claim_date TEXT, claim_count INTEGER, PRIMARY KEY (user_id, tier, claim_date))")
     
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY, 
-            username TEXT UNIQUE, 
-            password TEXT, 
-            role TEXT DEFAULT 'Member'
-        )
-    """)
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS claims (
-            user_id TEXT, 
-            tier TEXT, 
-            claim_date TEXT, 
-            claim_count INTEGER, 
-            PRIMARY KEY (user_id, tier, claim_date)
-        )
-    """)
-    
-    cursor.execute("SELECT * FROM users WHERE username = %s", ('admin',))
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
+    cursor.execute(f"SELECT * FROM users WHERE username = {p}", ('admin',))
     if not cursor.fetchone():
         hashed_pw = generate_password_hash("admin123")
-        cursor.execute("INSERT INTO users (username, password, role) VALUES (%s, %s, %s)", ('admin', hashed_pw, 'Admin'))
-    
+        cursor.execute(f"INSERT INTO users (username, password, role) VALUES ({p}, {p}, {p})", ('admin', hashed_pw, 'Admin'))
     conn.commit()
     conn.close()
 
 try:
     init_db()
-except Exception as db_error:
-    print(f"DATABASE INITIALIZATION LOG FAILURE: {db_error}")
+except Exception:
+    pass
 
 TIER_CONFIG = {
     "free": {"file": os.path.join(current_dir, "free.txt"), "limit": 2, "link": "https://work.ink/2IoF/key-system"},
@@ -97,27 +74,36 @@ def get_daily_claims(user_id, tier):
     today = str(date.today())
     conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT claim_count FROM claims WHERE user_id = %s AND tier = %s AND claim_date = %s", (str(user_id), tier, today))
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
+    cursor.execute(f"SELECT claim_count FROM claims WHERE user_id = {p} AND tier = {p} AND claim_date = {p}", (str(user_id), tier, today))
     row = cursor.fetchone()
     conn.close()
-    return row[0] if row else 0
+    return row if row else 0
 
 def increment_daily_claims(user_id, tier):
     today = str(date.today())
+    current = get_daily_claims(user_id, tier)
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("""
-        INSERT INTO claims (user_id, tier, claim_date, claim_count) 
-        VALUES (%s, %s, %s, 1)
-        ON CONFLICT (user_id, tier, claim_date) 
-        DO UPDATE SET claim_count = claims.claim_count + 1
-    """, (str(user_id), tier, today))
-    
+    if not DATABASE_URL or isinstance(conn, sqlite3.Connection):
+        if current == 0:
+            cursor.execute("INSERT INTO claims VALUES (?, ?, ?, 1)", (str(user_id), tier, today))
+        else:
+            cursor.execute("UPDATE claims SET claim_count = ? WHERE user_id = ? AND tier = ? AND claim_date = ?", (current + 1, str(user_id), tier, today))
+    else:
+        cursor.execute("""
+            INSERT INTO claims (user_id, tier, claim_date, claim_count) 
+            VALUES (%s, %s, %s, 1)
+            ON CONFLICT (user_id, tier, claim_date) 
+            DO UPDATE SET claim_count = claims.claim_count + 1
+        """, (str(user_id), tier, today))
+        
     conn.commit()
     conn.close()
 
 def verify_workink_key(key):
+    # Includes the mandatory API sub-route path structure
     url = f"https://work.ink/_api/v2/token/isValid/{key}?deleteToken=1"
     try:
         response = requests.get(url, timeout=5)
@@ -142,11 +128,12 @@ def login():
         
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT id, username, password, role FROM users WHERE username = %s", (username,))
+        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
+        cursor.execute(f"SELECT id, username, password, role FROM users WHERE username = {p}", (username,))
         user = cursor.fetchone()
         conn.close()
         
-        # FIXED: Targets explicit array position indexes (0=id, 1=username, 2=password, 3=role) 
+        # FIX: Extracts the clean password string explicitly from database response object array
         if user and check_password_hash(user[2], password):
             session['user_id'] = str(user[0])
             session['username'] = str(user[1])
@@ -167,8 +154,9 @@ def register():
         hashed_pw = generate_password_hash(password)
         conn = get_db_connection()
         cursor = conn.cursor()
+        p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
         try:
-            cursor.execute("INSERT INTO users (username, password) VALUES (%s, %s)", (username, hashed_pw))
+            cursor.execute(f"INSERT INTO users (username, password) VALUES ({p}, {p})", (username, hashed_pw))
             conn.commit()
             conn.close()
             return redirect(url_for('login'))
@@ -189,12 +177,13 @@ def admin_dashboard():
         
     conn = get_db_connection()
     cursor = conn.cursor()
+    p = "?" if (not DATABASE_URL or isinstance(conn, sqlite3.Connection)) else "%s"
     
     if request.method == 'POST':
         if 'update_role' in request.form:
             target_uid = request.form['user_id']
             new_role = request.form['role']
-            cursor.execute("UPDATE users SET role = %s WHERE id = %s", (new_role, target_uid))
+            cursor.execute(f"UPDATE users SET role = {p} WHERE id = {p}", (new_role, target_uid))
             conn.commit()
         elif 'restock' in request.form:
             tier = request.form['tier']
